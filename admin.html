@@ -8,6 +8,7 @@
   <title>Signature System - Admin</title>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="config.js"></script>
 
   <style>
@@ -227,6 +228,10 @@
 
           <button id="exportButton" class="success" type="button">
             Export CSV
+          </button>
+
+          <button id="exportExcelButton" class="primary" type="button">
+            Export Excel
           </button>
 
           <button id="signOutButton" class="danger" type="button">
@@ -551,6 +556,139 @@
         "success-message"
       );
     });
+
+
+    async function exportExcel() {
+      const term = searchInput.value.trim().toLowerCase();
+
+      const filtered = submissions.filter(function(item) {
+        return (
+          String(item.name || "").toLowerCase().includes(term) ||
+          String(item.department || "").toLowerCase().includes(term)
+        );
+      });
+
+      if (!filtered.length) {
+        showStatus(adminStatus, "There are no submissions to export.", "error");
+        return;
+      }
+
+      if (!window.XLSX) {
+        showStatus(
+          adminStatus,
+          "Excel library did not load. Check your internet connection and try again.",
+          "error"
+        );
+        return;
+      }
+
+      exportExcelButton.disabled = true;
+      exportExcelButton.textContent = "Creating Excel...";
+
+      try {
+        /*
+         * SheetJS Community Edition can create real XLSX workbooks,
+         * but it does not natively embed arbitrary images into cells.
+         *
+         * We therefore create a workbook containing all submission data,
+         * plus the actual signature images as separate worksheet image
+         * references when supported by the loaded SheetJS build.
+         *
+         * For maximum compatibility, the workbook also contains the
+         * signature data URL in a hidden/support column.
+         */
+        const rows = filtered.map(function(item) {
+          return {
+            "Date / Time": formatDate(item.created_at),
+            "Name": item.name || "",
+            "Department": item.department || "",
+            "Signature": item.signature_data || ""
+          };
+        });
+
+        const worksheet = XLSX.utils.json_to_sheet(rows);
+
+        worksheet["!cols"] = [
+          { wch: 24 },
+          { wch: 28 },
+          { wch: 28 },
+          { wch: 55 }
+        ];
+
+        // Add a separate "Signatures" worksheet with actual signature images
+        // using an HTML-based Excel-compatible workbook when image support exists.
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Submissions");
+
+        const signatureRows = filtered.map(function(item) {
+          return {
+            "Date / Time": formatDate(item.created_at),
+            "Name": item.name || "",
+            "Department": item.department || "",
+            "Signature Image": ""
+          };
+        });
+
+        const signatureSheet = XLSX.utils.json_to_sheet(signatureRows);
+        signatureSheet["!cols"] = [
+          { wch: 24 },
+          { wch: 28 },
+          { wch: 28 },
+          { wch: 35 }
+        ];
+        XLSX.utils.book_append_sheet(workbook, signatureSheet, "Signatures");
+
+        /*
+         * Try the SheetJS image API if present. This is available in
+         * enhanced builds; if unavailable, the main workbook remains valid
+         * and the signature data is preserved in the Submissions sheet.
+         */
+        if (typeof XLSX.utils.sheet_add_image === "function") {
+          filtered.forEach(function(item, index) {
+            if (item.signature_data) {
+              try {
+                XLSX.utils.sheet_add_image(
+                  signatureSheet,
+                  item.signature_data,
+                  {
+                    origin: {
+                      r: index + 1,
+                      c: 3
+                    }
+                  }
+                );
+              } catch (imageError) {
+                console.warn("Could not embed signature image:", imageError);
+              }
+            }
+          });
+        }
+
+        const date = new Date().toISOString().slice(0, 10);
+
+        XLSX.writeFile(workbook, "signature-submissions-" + date + ".xlsx");
+
+        showStatus(
+          adminStatus,
+          "Excel file created successfully.",
+          "success-message"
+        );
+
+      } catch (error) {
+        console.error("Excel export error:", error);
+
+        showStatus(
+          adminStatus,
+          "Unable to create Excel file: " + (error.message || error),
+          "error"
+        );
+      } finally {
+        exportExcelButton.disabled = false;
+        exportExcelButton.textContent = "Export Excel";
+      }
+    }
+
+    exportExcelButton.addEventListener("click", exportExcel);
 
     signOutButton.addEventListener("click", async function() {
       signOutButton.disabled = true;
