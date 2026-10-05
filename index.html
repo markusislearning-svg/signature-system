@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f2937">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Signature System">
+<title>Signature System</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:#f3f4f6;color:#111827;-webkit-font-smoothing:antialiased}.app{width:min(100%,720px);margin:auto;padding:max(20px,env(safe-area-inset-top)) 16px max(24px,env(safe-area-inset-bottom))}.card{background:#fff;border-radius:18px;padding:22px;box-shadow:0 8px 30px rgba(0,0,0,.08)}h1{margin:0 0 6px;font-size:25px}.subtitle{margin:0 0 22px;color:#6b7280;font-size:14px}label{display:block;margin:16px 0 7px;font-weight:600;font-size:14px}input{width:100%;min-height:48px;padding:12px 14px;border:1px solid #d1d5db;border-radius:11px;font-size:16px;outline:0;background:#fff}input:focus{border-color:#6b7280;box-shadow:0 0 0 3px rgba(107,114,128,.12)}.signature-wrap{border:1.5px solid #9ca3af;border-radius:12px;overflow:hidden;background:#fff}canvas{display:block;width:100%;height:230px;background:#fff;touch-action:none}.hint{font-size:12px;color:#6b7280;margin-top:7px}.buttons{display:grid;gap:10px;margin-top:18px}button{min-height:50px;border:0;border-radius:11px;font-size:16px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent}.clear{background:#fee2e2;color:#991b1b}.save{background:#1f2937;color:#fff}.save:disabled{opacity:.55}.status{margin-top:12px;padding:11px 13px;border-radius:10px;font-size:13px;display:none}.success{background:#ecfdf5;color:#065f46}.error{background:#fef2f2;color:#991b1b}.footer{text-align:center;color:#6b7280;font-size:12px;margin-top:15px}
+</style>
+</head>
+<body>
+<main class="app">
+<section class="card">
+<h1>Signature System</h1>
+<p class="subtitle">Enter your information and sign below.</p>
+<label for="name">Name</label>
+<input id="name" type="text" autocomplete="name" placeholder="Enter your full name">
+<label for="department">Department</label>
+<input id="department" type="text" autocomplete="organization" placeholder="Enter your department">
+<label>Signature</label>
+<div class="signature-wrap"><canvas id="signature" aria-label="Signature drawing area"></canvas></div>
+<div class="hint">Use your finger or Apple Pencil to sign.</div>
+<div class="buttons">
+<button class="clear" id="clearBtn" type="button">Clear / Reset Signature</button>
+<button class="save" id="saveBtn" type="button">Submit Signature</button>
+</div>
+<div class="status success" id="success">Submitted successfully.</div>
+<div class="status error" id="error"></div>
+</section>
+<div class="footer">Securely submitted to the connected database.</div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script>
+(() => {
+  const nameInput=document.getElementById('name'), deptInput=document.getElementById('department');
+  const canvas=document.getElementById('signature'), ctx=canvas.getContext('2d');
+  const clearBtn=document.getElementById('clearBtn'), saveBtn=document.getElementById('saveBtn');
+  const success=document.getElementById('success'), error=document.getElementById('error');
+  let drawing=false, hasSignature=false;
+
+  function resizeCanvas(){
+    const old=hasSignature?canvas.toDataURL('image/png'):null, rect=canvas.getBoundingClientRect();
+    const dpr=Math.max(1,Math.min(devicePixelRatio||1,3));
+    canvas.width=Math.round(rect.width*dpr); canvas.height=Math.round(rect.height*dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0); ctx.lineWidth=2.2; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#111827';
+    if(old){const img=new Image();img.onload=()=>ctx.drawImage(img,0,0,rect.width,rect.height);img.src=old;}
+  }
+  function clearSignature(){ctx.clearRect(0,0,canvas.clientWidth,canvas.clientHeight);hasSignature=false;hideMessages();}
+  function point(e){const r=canvas.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top};}
+  canvas.addEventListener('pointerdown',e=>{e.preventDefault();drawing=true;hasSignature=true;canvas.setPointerCapture(e.pointerId);const p=point(e);ctx.beginPath();ctx.moveTo(p.x,p.y);});
+  canvas.addEventListener('pointermove',e=>{if(!drawing)return;e.preventDefault();const p=point(e);ctx.lineTo(p.x,p.y);ctx.stroke();});
+  function end(e){if(!drawing)return;drawing=false;try{canvas.releasePointerCapture(e.pointerId)}catch(_){}}
+  canvas.addEventListener('pointerup',end);canvas.addEventListener('pointercancel',end);
+  function hideMessages(){success.style.display='none';error.style.display='none';}
+  function showError(msg){success.style.display='none';error.textContent=msg;error.style.display='block';}
+  function showSuccess(){error.style.display='none';success.style.display='block';}
+  clearBtn.addEventListener('click',clearSignature);
+
+  saveBtn.addEventListener('click',async()=>{
+    hideMessages();
+    const name=nameInput.value.trim(), department=deptInput.value.trim();
+    if(!name||!department||!hasSignature){showError('Please enter your name, department, and signature.');return;}
+    if(!window.SUPABASE_URL||!window.SUPABASE_ANON_KEY){showError('Supabase is not configured. Open config.js and add your project values.');return;}
+    saveBtn.disabled=true; saveBtn.textContent='Submitting...';
+    try{
+      const client=window.supabase.createClient(window.SUPABASE_URL,window.SUPABASE_ANON_KEY);
+      const {error:dbError}=await client.from('signatures').insert({
+        name, department, signature_data:canvas.toDataURL('image/png')
+      });
+      if(dbError) throw dbError;
+      showSuccess();
+      nameInput.value=''; deptInput.value=''; clearSignature();
+      showSuccess();
+    }catch(e){showError('Submission failed. Please check your connection and try again.');}
+    finally{saveBtn.disabled=false;saveBtn.textContent='Submit Signature';}
+  });
+  window.addEventListener('resize',resizeCanvas);
+  resizeCanvas();
+})();
+</script>
+</body>
+</html>
