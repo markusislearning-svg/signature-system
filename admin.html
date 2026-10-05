@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+
+  <title>Signature System - Admin</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <script src="config.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      background: #f4f6f8;
+      color: #222;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 14px;
+      padding: 24px;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.08);
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      margin-top: 0;
+      font-size: 28px;
+    }
+
+    h2 {
+      margin-top: 0;
+      font-size: 21px;
+    }
+
+    input {
+      width: 100%;
+      padding: 13px;
+      margin: 8px 0 14px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 12px 18px;
+      font-size: 15px;
+      cursor: pointer;
+      margin-right: 8px;
+      margin-bottom: 8px;
+    }
+
+    .primary {
+      background: #222;
+      color: white;
+    }
+
+    .secondary {
+      background: #e9ecef;
+      color: #222;
+    }
+
+    .danger {
+      background: #c62828;
+      color: white;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .message {
+      padding: 12px;
+      border-radius: 8px;
+      margin-top: 10px;
+      display: none;
+    }
+
+    .error {
+      background: #ffebee;
+      color: #b71c1c;
+    }
+
+    .success {
+      background: #e8f5e9;
+      color: #1b5e20;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+
+    .toolbar input {
+      flex: 1;
+      min-width: 220px;
+      margin: 0;
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 750px;
+    }
+
+    th, td {
+      padding: 12px;
+      border-bottom: 1px solid #eee;
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    th {
+      background: #f7f7f7;
+      font-weight: 600;
+    }
+
+    .signature {
+      width: 180px;
+      height: 80px;
+      object-fit: contain;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      background: white;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .count {
+      color: #666;
+      font-size: 14px;
+    }
+
+    @media (max-width: 600px) {
+      .container {
+        padding: 12px;
+      }
+
+      .card {
+        padding: 18px;
+      }
+
+      h1 {
+        font-size: 24px;
+      }
+
+      .signature {
+        width: 140px;
+      }
+    }
+  </style>
+
+</head>
+
+<body>
+
+<div class="container">
+
+  <!-- LOGIN -->
+
+  <div id="loginSection" class="card">
+    <h1>Admin Login</h1>
+    <p>Sign in to view submitted signatures.</p>
+
+```
+<form id="loginForm">
+  <label for="email">Email</label>
+  <input
+    type="email"
+    id="email"
+    placeholder="Admin email"
+    required
+    autocomplete="username"
+  >
+
+  <label for="password">Password</label>
+  <input
+    type="password"
+    id="password"
+    placeholder="Password"
+    required
+    autocomplete="current-password"
+  >
+
+  <button type="submit" class="primary">
+    Sign In
+  </button>
+</form>
+
+<div id="loginError" class="message error"></div>
+```
+
+  </div>
+
+  <!-- ADMIN DASHBOARD -->
+
+  <div id="adminSection" class="hidden">
+
+```
+<div class="card">
+  <div class="topbar">
+    <div>
+      <h1>Signature Submissions</h1>
+      <div id="count" class="count">
+        Loading submissions...
+      </div>
+    </div>
+
+    <div>
+      <button id="refreshButton" class="secondary">
+        Refresh
+      </button>
+
+      <button id="signOutButton" class="danger">
+        Sign Out
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<div class="card">
+
+  <div class="toolbar">
+    <input
+      type="search"
+      id="search"
+      placeholder="Search name or department..."
+    >
+  </div>
+
+  <div id="dataError" class="message error"></div>
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Date / Time</th>
+          <th>Name</th>
+          <th>Department</th>
+          <th>Signature</th>
+        </tr>
+      </thead>
+
+      <tbody id="tableBody">
+      </tbody>
+    </table>
+  </div>
+
+</div>
+```
+
+  </div>
+
+</div>
+
+<script>
+  const client = window.supabase.createClient(
+    window.SUPABASE_URL,
+    window.SUPABASE_ANON_KEY
+  );
+
+  const loginSection = document.getElementById("loginSection");
+  const adminSection = document.getElementById("adminSection");
+
+  const loginForm = document.getElementById("loginForm");
+  const loginError = document.getElementById("loginError");
+
+  const tableBody = document.getElementById("tableBody");
+  const searchInput = document.getElementById("search");
+  const countElement = document.getElementById("count");
+
+  const dataError = document.getElementById("dataError");
+
+  let submissions = [];
+
+
+  function showLoginError(message) {
+    loginError.textContent = message;
+    loginError.style.display = "block";
+  }
+
+
+  function showDataError(message) {
+    dataError.textContent = message;
+    dataError.style.display = "block";
+  }
+
+
+  function clearDataError() {
+    dataError.textContent = "";
+    dataError.style.display = "none";
+  }
+
+
+  function showAdmin() {
+    loginSection.classList.add("hidden");
+    adminSection.classList.remove("hidden");
+  }
+
+
+  function showLogin() {
+    adminSection.classList.add("hidden");
+    loginSection.classList.remove("hidden");
+  }
+
+
+  function formatDate(dateString) {
+    const date = new Date(dateString);
+
+    return date.toLocaleString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit"
+    });
+  }
+
+
+  function renderTable() {
+
+    const searchTerm = searchInput.value
+      .trim()
+      .toLowerCase();
+
+    const filtered = submissions.filter(item => {
+
+      const name = (item.name || "").toLowerCase();
+      const department = (item.department || "").toLowerCase();
+
+      return (
+        name.includes(searchTerm) ||
+        department.includes(searchTerm)
+      );
+    });
+
+
+    tableBody.innerHTML = "";
+
+
+    if (filtered.length === 0) {
+
+      const row = document.createElement("tr");
+
+      const cell = document.createElement("td");
+
+      cell.colSpan = 4;
+      cell.textContent = searchTerm
+        ? "No matching submissions found."
+        : "No submissions found.";
+
+      cell.style.textAlign = "center";
+      cell.style.padding = "30px";
+
+      row.appendChild(cell);
+      tableBody.appendChild(row);
+
+      countElement.textContent = "0 submissions";
+
+      return;
+    }
+
+
+    filtered.forEach(item => {
+
+      const row = document.createElement("tr");
+
+
+      const dateCell = document.createElement("td");
+      dateCell.textContent = formatDate(item.created_at);
+
+
+      const nameCell = document.createElement("td");
+      nameCell.textContent = item.name;
+
+
+      const departmentCell = document.createElement("td");
+      departmentCell.textContent = item.department;
+
+
+      const signatureCell = document.createElement("td");
+
+      const image = document.createElement("img");
+
+      image.className = "signature";
+      image.src = item.signature_data;
+      image.alt = "Signature of " + item.name;
+
+      signatureCell.appendChild(image);
+
+
+      row.appendChild(dateCell);
+      row.appendChild(nameCell);
+      row.appendChild(departmentCell);
+      row.appendChild(signatureCell);
+
+      tableBody.appendChild(row);
+    });
+
+
+    countElement.textContent =
+      filtered.length +
+      (filtered.length === 1 ? " submission" : " submissions");
+  }
+
+
+  async function loadSubmissions() {
+
+    clearDataError();
+
+    countElement.textContent = "Loading submissions...";
+
+
+    const {
+      data,
+      error
+    } = await client
+      .from("signatures")
+      .select(
+        "id,name,department,signature_data,created_at"
+      )
+      .order("created_at", {
+        ascending: false
+      });
+
+
+    if (error) {
+
+      console.error(error);
+
+      showDataError(
+        "Unable to load submissions. Make sure you are logged in and the Admin RLS policy is enabled."
+      );
+
+      countElement.textContent = "Unable to load submissions.";
+
+      return;
+    }
+
+
+    submissions = data || [];
+
+    renderTable();
+  }
+
+
+  loginForm.addEventListener("submit", async function(event) {
+
+    event.preventDefault();
+
+    loginError.style.display = "none";
+
+    const email =
+      document.getElementById("email").value.trim();
+
+    const password =
+      document.getElementById("password").value;
+
+
+    const {
+      data,
+      error
+    } = await client.auth.signInWithPassword({
+      email,
+      password
+    });
+
+
+    if (error) {
+
+      console.error(error);
+
+      showLoginError(
+        "Login failed. Please check your email and password."
+      );
+
+      return;
+    }
+
+
+    if (data.session) {
+
+      showAdmin();
+
+      await loadSubmissions();
+    }
+  });
+
+
+  document
+    .getElementById("refreshButton")
+    .addEventListener("click", loadSubmissions);
+
+
+  document
+    .getElementById("signOutButton")
+    .addEventListener("click", async function() {
+
+      await client.auth.signOut();
+
+      submissions = [];
+
+      tableBody.innerHTML = "";
+
+      searchInput.value = "";
+
+      showLogin();
+    });
+
+
+  searchInput.addEventListener(
+    "input",
+    renderTable
+  );
+
+
+  async function checkExistingSession() {
+
+    const {
+      data
+    } = await client.auth.getSession();
+
+
+    if (data.session) {
+
+      showAdmin();
+
+      await loadSubmissions();
+
+    } else {
+
+      showLogin();
+    }
+  }
+
+
+  checkExistingSession();
+</script>
+
+</body>
+</html>
