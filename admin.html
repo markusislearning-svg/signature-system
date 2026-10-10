@@ -116,6 +116,14 @@ th{background:#f9fafb}
       </div>
     </div>
 
+    <div id="hiddenTools" class="field hidden">
+      <label style="display:flex;align-items:center;gap:8px;font-weight:400">
+        <input id="showHidden" type="checkbox" style="width:auto">
+        Show hidden submissions (Administrator only)
+      </label>
+      <div class="small">Hide removes a submission from the normal list but keeps its record in the database. You can restore it here.</div>
+    </div>
+
     <div class="field">
       <label>Search submissions</label>
       <input id="sigSearch" type="search" placeholder="Search name or department">
@@ -131,6 +139,7 @@ th{background:#f9fafb}
             <th>Name</th>
             <th>Department</th>
             <th>Signature</th>
+            <th id="sigActionsHeading" class="hidden">Actions</th>
           </tr>
         </thead>
         <tbody id="sigBody"></tbody>
@@ -322,7 +331,7 @@ async function loadSigs() {
 
   const { data, error } = await sb
     .from('signatures')
-    .select('id,name,department,signature_data,created_at')
+    .select('id,name,department,signature_data,created_at,is_hidden')
     .order('created_at', { ascending:false });
 
   if (error) {
@@ -337,36 +346,84 @@ async function loadSigs() {
 
 function renderSigs() {
   const q = $('sigSearch').value.toLowerCase().trim();
+  const showHidden = role === 'admin' && $('showHidden').checked;
 
-  const filtered = sigs.filter(row =>
-    !q ||
-    String(row.name || '').toLowerCase().includes(q) ||
-    String(row.department || '').toLowerCase().includes(q)
-  );
+  const filtered = sigs.filter(row => {
+    const hidden = !!row.is_hidden;
+    if (role !== 'admin' && hidden) return false;
+    if (role === 'admin' && showHidden !== hidden) return false;
+    return !q ||
+      String(row.name || '').toLowerCase().includes(q) ||
+      String(row.department || '').toLowerCase().includes(q);
+  });
+
+  $('sigActionsHeading').classList.toggle('hidden', role !== 'admin');
 
   $('sigBody').innerHTML = filtered.length
     ? filtered.map(row => `
         <tr>
-          <td>${esc(date(row.created_at))}</td>
+          <td>${esc(date(row.created_at))}${row.is_hidden ? '<br><span class="badge">Hidden</span>' : ''}</td>
           <td>${esc(row.name)}</td>
           <td>${esc(row.department)}</td>
           <td>
-            ${
-              row.signature_data
-                ? `<img class="sig" src="${esc(row.signature_data)}" alt="Signature">`
-                : '-'
-            }
+            ${row.signature_data
+              ? `<img class="sig" src="${esc(row.signature_data)}" alt="Signature">`
+              : '-'}
           </td>
+          ${role === 'admin' ? `<td>${row.is_hidden
+            ? `<button class="success" type="button" onclick="restoreSig(${Number(row.id)})">Restore</button>`
+            : `<button class="danger" type="button" onclick="hideSig(${Number(row.id)})">Delete</button>`
+          }</td>` : ''}
         </tr>
       `).join('')
     : `
       <tr>
-        <td colspan="4" style="text-align:center">
-          No submissions found.
+        <td colspan="${role === 'admin' ? 5 : 4}" style="text-align:center">
+          ${showHidden ? 'No hidden submissions found.' : 'No submissions found.'}
         </td>
       </tr>
     `;
 }
+
+async function setSubmissionHidden(id, hidden) {
+  if (role !== 'admin') {
+    msg($('sigMsg'), 'Only an Administrator can do this.', 'error');
+    return;
+  }
+
+  const row = sigs.find(item => Number(item.id) === Number(id));
+  if (!row) {
+    msg($('sigMsg'), 'Submission was not found. Refresh and try again.', 'error');
+    return;
+  }
+
+  const action = hidden ? 'hide' : 'restore';
+  const confirmed = confirm(hidden
+    ? `Hide the submission for ${row.name}? The database record will NOT be deleted.`
+    : `Restore the submission for ${row.name} to the normal list?`);
+  if (!confirmed) return;
+
+  msg($('sigMsg'), hidden ? 'Hiding submission...' : 'Restoring submission...', 'info');
+
+  const { error } = await sb
+    .from('signatures')
+    .update({ is_hidden: hidden })
+    .eq('id', id);
+
+  if (error) {
+    msg($('sigMsg'), error.message, 'error');
+    return;
+  }
+
+  row.is_hidden = hidden;
+  renderSigs();
+  msg($('sigMsg'), hidden
+    ? 'Submission hidden from the normal list. The database record is still saved.'
+    : 'Submission restored to the normal list.', 'ok');
+}
+
+window.hideSig = id => setSubmissionHidden(id, true);
+window.restoreSig = id => setSubmissionHidden(id, false);
 
 /* =========================================================
    USER MANAGEMENT
@@ -658,15 +715,21 @@ function csvEsc(value) {
     '"';
 }
 
+function getExportSigs() {
+  const showHidden = role === 'admin' && $('showHidden').checked;
+  return sigs.filter(row => showHidden ? !!row.is_hidden : !row.is_hidden);
+}
+
 function exportCSV() {
-  if (!sigs.length) {
-    alert('No submissions to export.');
+  const exportRows = getExportSigs();
+  if (!exportRows.length) {
+    alert('No submissions in the current view to export.');
     return;
   }
 
   const rows = [
     ['Date/Time','Name','Department','Signature Data'],
-    ...sigs.map(row => [
+    ...exportRows.map(row => [
       date(row.created_at),
       row.name,
       row.department,
@@ -697,8 +760,9 @@ function getImageExtension(data) {
 }
 
 async function exportXLSX() {
-  if (!sigs.length) {
-    alert('No submissions to export.');
+  const exportRows = getExportSigs();
+  if (!exportRows.length) {
+    alert('No submissions in the current view to export.');
     return;
   }
 
@@ -743,7 +807,7 @@ async function exportXLSX() {
       bold:true
     };
 
-    sigs.forEach(rowData => {
+    exportRows.forEach(rowData => {
 
       const row = sheet.addRow({
         date:date(rowData.created_at),
@@ -876,6 +940,7 @@ async function showApp(signedInUser) {
     'hidden',
     role !== 'admin'
   );
+  $('hiddenTools').classList.toggle('hidden', role !== 'admin');
 
   await loadSigs();
 
@@ -963,6 +1028,7 @@ $('csv').onclick = exportCSV;
 $('xlsx').onclick = exportXLSX;
 
 $('sigSearch').oninput = renderSigs;
+$('showHidden').onchange = renderSigs;
 $('userSearch').oninput = renderUsers;
 
 /* =========================================================
